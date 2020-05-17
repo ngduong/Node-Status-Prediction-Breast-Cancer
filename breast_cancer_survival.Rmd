@@ -24,9 +24,7 @@ library(janitor)
 library(FNN)
 library(ModelMetrics)
 library(caret)
-library(DMwR)
 library(boot)
-library(Hmisc)
 library(microbenchmark)
 library(broom)
 library(corrplot)
@@ -70,7 +68,7 @@ proteome_wo_id = as_tibble(proteome_tp) %>% select(-par_id, everything()) %>% .[
 outcome_clean = outcome %>% 
   separate(complete_tcga_id, c("tcga","id2","id4"), "-") %>% #sep id based on 2-digit id and 4-digit id
   select(-tcga) %>% 
-  select(id2, id4, tumor) %>% drop_na(tumor)
+  select(id2, id4, node_coded)
 
 bcp_merge = left_join(proteome_with_id, outcome_clean, by = c("id2","id4"))
 ```
@@ -104,55 +102,151 @@ sup.var = names(proteome_woid_nona)[var_id$row]
 proteome_final = proteome_woid_nona[,c(sup.var)]
 ```
 
+
 Obtain final data
 ```{r}
 #merge proteome and clinical data 
-bcp_data = cbind(proteome_final, tumor = bcp_merge$tumor) %>% as_tibble() %>% drop_na(tumor) 
+bcp_data = cbind(proteome_final, node = bcp_merge$node_coded) %>% as_tibble() %>% drop_na(node) %>% mutate_at(vars(-node), as.numeric) 
 ```
 
 Exploratory data analysis
 
 ```{r}
 #grouped boxplots
-bcp_eda_top = bcp_data %>% dplyr::select(c(1:20, 501)) %>% mutate_at(vars(-tumor), as.numeric)
-
-bcp_eda_top %>% 
+#top 20 genes with highest variance
+bcp_data %>% dplyr::select(c(1:20, 501)) %>% 
   pivot_longer(1:20,
                names_to = "protein",
                values_to = "value") %>% 
-  group_by(tumor) %>% 
-  ggplot(aes(x = protein, y = value, color = tumor)) +
-  geom_boxplot() + theme_bw() + facet_grid(~tumor) + 
+  group_by(node) %>% 
+  ggplot(aes(x = protein, y = value, color = node)) +
+  geom_boxplot() + theme_bw() + 
+  labs(y = "Expression levels", x = "Protein") + facet_grid(~node) + 
   theme(legend.position = "none",
-        axis.title.x=element_blank(),
         axis.text.x = element_text(angle = 40, hjust = 1))
 
-#mid 30 proteins
-bcp_eda_mid = bcp_data %>% dplyr::select(c(241:270, 501)) %>% mutate_at(vars(-tumor), as.numeric)
-
-bcp_eda_mid %>% 
+#mid 30 proteins with highest variance
+bcp_data %>% dplyr::select(c(91:110, 501)) %>% 
   pivot_longer(1:30,
                names_to = "protein",
                values_to = "value") %>% 
-  group_by(tumor) %>% 
-  ggplot(aes(x = protein, y = value, color = tumor)) +
+  group_by(node) %>% 
+  ggplot(aes(x = protein, y = value, color = node)) +
   geom_boxplot() + theme_bw() + 
+  labs(y = "Expression levels", x = "Protein") + 
   theme(legend.position = "none",
-        axis.title.x=element_blank(),
         axis.text.x = element_text(angle = 40, hjust = 1))
 
-#bottom 40 proteins
-bcp_eda_bottom = bcp_data %>% dplyr::select(c(461:500, 501)) %>% mutate_at(vars(-tumor), as.numeric)
-
-bcp_eda_bottom %>% 
+#40 proteins with lowest variance
+bcp_data %>% dplyr::select(c(161:200, 501)) %>% 
   pivot_longer(1:40,
                names_to = "protein",
                values_to = "value") %>% 
-  group_by(tumor) %>% 
-  ggplot(aes(x = protein, y = value, color = tumor)) +
+  group_by(node) %>% 
+  ggplot(aes(x = protein, y = value, color = node)) +
   geom_boxplot() + theme_bw() + 
+  labs(y = "Expression levels", x = "Protein") + 
   theme(legend.position = "none",
-        axis.title.x=element_blank(),
         axis.text.x = element_text(angle = 40, hjust = 1))
+```
+
+
+## Prediction
+
+```{r}
+#create training set with a random sample of 800 observations
+set.seed(2020)
+rowTrain <-createDataPartition(y = bcp_data$node,
+                               p = 0.75,
+                               list = FALSE)
+bcp_train = bcp_data[rowTrain,]
+bcp_test = bcp_data[-rowTrain,]
+```
+
+
+### Random Forest
+
+```{r}
+ctrl_cl = trainControl(method = "repeatedcv",
+                    summaryFunction = twoClassSummary,
+                    classProbs = TRUE)
+
+rf.grid = expand.grid(mtry = 15:70, 
+                      splitrule = "gini",
+                      min.node.size = 1:5)
+
+set.seed(2020)
+rf.fit <- train(node~., bcp_train,
+                method = "ranger",
+                tuneGrid = rf.grid,
+                metric = "ROC",
+                trControl = ctrl_cl, 
+                verbose = FALSE)
+
+ggplot(rf.fit, highlight = TRUE)
+```
+
+Random Forest prediction results
+
+```{r}
+rf.pred = predict(rf.fit, bcp_test, type = "prob")
+rf.pred
+```
+
+
+### Boosting 
+
+```{r}
+
+```
+
+
+### SVM
+
+**Fit a support vector classifier (linear kernel) to the training data with Tumor Type as the response**
+
+```{r}
+ctrl <-trainControl(method = "repeatedcv", number = 5, repeats = 5)
+
+set.seed(2020)
+svml.fit <-train(node~.,data = bcp_train,
+                 method = "svmLinear2",
+                 allowParallel=TRUE,
+                 tuneGrid =data.frame(cost =exp(seq(-10,2,len=30))),
+                 trControl = ctrl)
+
+ggplot(svml.fit, highlight = TRUE)
+```
+
+Find the training and test error rate
+
+```{r}
+pred.svml.test <-predict(svml.fit, newdata = bcp_test)
+summary(pred.svml.test)
+table(pred.svml.test, bcp_test$node)
+confusionMatrix(data = summary(pred.svml.test), reference = bcp_test$node)
+```
+
+**Fit a support vector machine (radial kernel) to the training data with Tumor Type as the response**
+
+```{r}
+svmr.grid <-expand.grid(C =exp(seq(-5,2,len=10)),
+                        sigma =exp(seq(-7,1,len=10)))
+
+set.seed(7)
+svmr.fit <-train(tumor~.,data = bcp_train,
+                 method = "svmRadial",
+                 allowParallel=TRUE,
+                 tuneGrid = svmr.grid,
+                 trControl = ctrl)
+
+ggplot(svmr.fit, highlight = TRUE)
+```
+
+Find the training and test error rate
+
+```{r}
+pred.svmr.test <-predict(svmr.fit, newdata = bcp_test)
+table(pred.svmr.test, bcp_test$tumor)
 ```
 
