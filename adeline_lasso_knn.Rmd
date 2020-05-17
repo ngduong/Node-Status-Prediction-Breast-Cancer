@@ -1,0 +1,78 @@
+---
+title: "Lasso and KNN"
+author: "Adeline Shin"
+date: "5/17/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(caret)
+library(ModelMetrics)
+library(pROC)
+```
+
+# Load Data and Split
+```{r}
+load("./breast_cancer_data.RData")
+
+set.seed(13)
+training_rows = createDataPartition(y = bcp_data$tumor,
+                                    p = 0.8,
+                                    list = FALSE)
+
+training_data = bcp_data[training_rows,]
+# Convert proteome data to numeric
+i = c(1:500)
+training_data[ , i] = apply(training_data[ , i], 1,            
+                            function(x) as.numeric(x))
+
+test_data = bcp_data[-training_rows,]
+test_data[ , i] = apply(test_data[ , i], 1,            
+                        function(x) as.numeric(x))
+```
+
+# Model Specifications
+```{r}
+ctrl = trainControl(method = "cv", number = 10)
+```
+
+# Lasso
+```{r}
+y = training_data$tumor
+x = model.matrix(tumor ~ ., data = training_data)[, -1]
+
+set.seed(13)
+lasso_fit = train(x, y,
+                  method = "glmnet",
+                  trControl = ctrl,
+                  tuneGrid = expand.grid(alpha = 1, 
+                                         lambda = exp(seq(-10, 0, length = 500))))
+
+plot(lasso_fit, xTrans = function(x) log(x))
+
+lasso_coef = coef(lasso_fit$finalModel,lasso_fit$bestTune$lambda)
+
+lasso_pred = predict(lasso_fit, newdata = test_data)
+mse(test_data$tumor, lasso_pred)
+```
+
+# KNN
+```{r}
+set.seed(13)
+knn_fit = train(x, y,
+                method = "knn",
+                preProcess = c("center", "scale"),
+                tuneGrid = data.frame(k = seq(1, 50, by = 1)),
+                trControl = ctrl)
+
+ggplot(knn_fit)
+
+knn_pred = predict(knn_fit, newdata = test_data, type = "prob")[,2]
+knn_roc = roc(test_data$tumor, knn_pred)
+plot(knn_roc)
+legend("bottomright", legend = paste0("KNN AUC", ": ", round(knn_roc$auc, 3)),
+       col = 1:4, lwd = 2)
+```
+
