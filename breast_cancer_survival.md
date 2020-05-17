@@ -1,54 +1,11 @@
----
-title: "Breast Cancer Type Prediction using Proteomic Data"
-author: "Ngoc Duong - nqd2000"
-date: "05/15/2020"
-output: github_document
-editor_options: 
-  chunk_output_type: console
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-
-library(caret)
-library(tidyverse)
-library(data.table)
-library(viridis)
-library(mgcv)
-library(ggplot2)
-library(pdp)
-library(earth)
-library(patchwork)
-library(nnet)
-library(janitor)
-library(FNN)
-library(ModelMetrics)
-library(caret)
-library(DMwR)
-library(boot)
-library(Hmisc)
-library(microbenchmark)
-library(broom)
-library(corrplot)
-
-knitr::opts_chunk$set(
-	echo = TRUE,
-	warning = FALSE,
-	fig.width = 8, 
-  fig.height = 6,
-  out.width = "90%"
-)
-options(
-  ggplot2.continuous.colour = "viridis",
-  ggplot2.continuous.fill = "viridis"
-)
-scale_colour_discrete = scale_colour_viridis_d
-scale_fill_discrete = scale_fill_viridis_d
-theme_set(theme_minimal() + theme(legend.position = "bottom"))
-```
+Breast Cancer Type Prediction using Proteomic Data
+================
+Ngoc Duong - nqd2000
+05/15/2020
 
 Import data and get rid of NA values
-```{r}
+
+``` r
 #import data
 outcome = read.csv("./breastcancerproteomes/clinical_data_breast_cancer.csv") %>% janitor::clean_names()
 proteome = read.csv("./breastcancerproteomes/77_cancer_proteomes_CPTAC_itraq.csv") 
@@ -75,9 +32,9 @@ outcome_clean = outcome %>%
 bcp_merge = left_join(proteome_with_id, outcome_clean, by = c("id2","id4"))
 ```
 
-Leave out proteins that have missing quantification values 
+Leave out proteins that have missing quantification values
 
-```{r}
+``` r
 missing.counts <- NULL
 for(i in 1:ncol(proteome_wo_id)) {
 missing.counts[i] <- sum(is.na(proteome_wo_id[,i]))}
@@ -87,9 +44,9 @@ miss <- names(proteome_wo_id)[which(missing.counts >= 1)]
 proteome_woid_nona = proteome_wo_id[ ,!(colnames(proteome_wo_id) %in% c(miss))]
 ```
 
-Screening variables 
+Screening variables
 
-```{r}
+``` r
 #find variance for all proteins
 var <- NULL
 for(i in 1:ncol(proteome_woid_nona)){
@@ -105,14 +62,15 @@ proteome_final = proteome_woid_nona[,c(sup.var)]
 ```
 
 Obtain final data
-```{r}
+
+``` r
 #merge proteome and clinical data 
 bcp_data = cbind(proteome_final, tumor = bcp_merge$tumor) %>% as_tibble() %>% drop_na(tumor) 
 ```
 
 Exploratory data analysis
 
-```{r}
+``` r
 #grouped boxplots
 bcp_eda_top = bcp_data %>% dplyr::select(c(1:20, 501)) %>% mutate_at(vars(-tumor), as.numeric)
 
@@ -126,7 +84,11 @@ bcp_eda_top %>%
   theme(legend.position = "none",
         axis.title.x=element_blank(),
         axis.text.x = element_text(angle = 40, hjust = 1))
+```
 
+<img src="breast_cancer_survival_files/figure-gfm/unnamed-chunk-5-1.png" width="90%" />
+
+``` r
 #mid 30 proteins
 bcp_eda_mid = bcp_data %>% dplyr::select(c(241:270, 501)) %>% mutate_at(vars(-tumor), as.numeric)
 
@@ -140,7 +102,11 @@ bcp_eda_mid %>%
   theme(legend.position = "none",
         axis.title.x=element_blank(),
         axis.text.x = element_text(angle = 40, hjust = 1))
+```
 
+<img src="breast_cancer_survival_files/figure-gfm/unnamed-chunk-5-2.png" width="90%" />
+
+``` r
 #bottom 40 proteins
 bcp_eda_bottom = bcp_data %>% dplyr::select(c(461:500, 501)) %>% mutate_at(vars(-tumor), as.numeric)
 
@@ -156,3 +122,4 @@ bcp_eda_bottom %>%
         axis.text.x = element_text(angle = 40, hjust = 1))
 ```
 
+<img src="breast_cancer_survival_files/figure-gfm/unnamed-chunk-5-3.png" width="90%" />
