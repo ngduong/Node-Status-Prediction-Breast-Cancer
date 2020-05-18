@@ -183,7 +183,7 @@ ctrl_cl = trainControl(method = "repeatedcv",
                     summaryFunction = twoClassSummary,
                     classProbs = TRUE)
 
-rf.grid = expand.grid(mtry = 5:30, 
+rf.grid = expand.grid(mtry = 5:35, 
                       splitrule = "gini",
                       min.node.size = 1:6)
 
