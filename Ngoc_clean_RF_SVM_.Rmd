@@ -169,7 +169,7 @@ bcp_data %>% dplyr::select(c(461:500, 501)) %>%
 #create training set with a random sample of 800 observations
 set.seed(13)
 rowTrain <-createDataPartition(y = bcp_data$node,
-                               p = 0.85,
+                               p = 0.80,
                                list = FALSE)
 bcp_train = bcp_data[rowTrain,]
 bcp_test = bcp_data[-rowTrain,]
