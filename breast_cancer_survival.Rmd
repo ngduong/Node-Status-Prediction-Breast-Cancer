@@ -17,17 +17,12 @@ library(viridis)
 library(mgcv)
 library(ggplot2)
 library(pdp)
-library(earth)
 library(patchwork)
-library(nnet)
 library(janitor)
-library(FNN)
 library(ModelMetrics)
 library(caret)
-library(boot)
 library(microbenchmark)
 library(broom)
-library(corrplot)
 
 knitr::opts_chunk$set(
 	echo = TRUE,
@@ -45,7 +40,10 @@ scale_fill_discrete = scale_fill_viridis_d
 theme_set(theme_minimal() + theme(legend.position = "bottom"))
 ```
 
-Import data and get rid of NA values
+# Data cleaning 
+
+**Import data and get rid of NA values**
+
 ```{r}
 #import data
 outcome = read.csv("./breastcancerproteomes/clinical_data_breast_cancer.csv") %>% janitor::clean_names()
@@ -70,10 +68,10 @@ outcome_clean = outcome %>%
   select(-tcga) %>% 
   select(id2, id4, node_coded)
 
-bcp_merge = left_join(proteome_with_id, outcome_clean, by = c("id2","id4"))
+bcp_merge = left_join(proteome_with_id, outcome_clean, by = c("id2","id4")) %>% select(-id2, -id4) %>% drop_na(node_coded)
 ```
-
-Leave out proteins that have missing quantification values 
+ 
+**Leave out proteins that have missing quantification values**
 
 ```{r}
 missing.counts <- NULL
@@ -82,10 +80,10 @@ missing.counts[i] <- sum(is.na(proteome_wo_id[,i]))}
 
 miss <- names(proteome_wo_id)[which(missing.counts >= 1)] 
 
-proteome_woid_nona = proteome_wo_id[ ,!(colnames(proteome_wo_id) %in% c(miss))]
+proteome_woid_nona = proteome_wo_id[-c(81:83),!(colnames(proteome_wo_id) %in% c(miss))]
 ```
 
-Screening variables 
+**Screening variables**
 
 ```{r}
 #find variance for all proteins
@@ -93,23 +91,37 @@ var <- NULL
 for(i in 1:ncol(proteome_woid_nona)){
 var[i] <- var(proteome_woid_nona[,i])}
 
-var_id = tibble(row = c(1:7994), var) %>% arrange(desc(var)) %>% slice(1:500)
+var_id = tibble(row = c(1:7994), var) %>% arrange(desc(var)) %>% slice(1:5000)
 
 #find names of proteins with high variances and put them in a vector
 sup.var = names(proteome_woid_nona)[var_id$row]
 
 #subset original data with the created vector
-proteome_final = proteome_woid_nona[,c(sup.var)]
+proteome_final = proteome_woid_nona[,c(sup.var)] %>% mutate_all(as.numeric) %>% as.matrix()
+
+#use t-test to find proteins that are most associatd with the outcome
+t_test = NULL
+for(i in 1:ncol(proteome_final)){
+  t_test[i] = t.test(proteome_final[,i]~bcp_merge$node_coded)$p.value
+}
+
+t_test_id = tibble(row = c(1:5000), t_test) %>% arrange(t_test) %>% slice(1:500)
+
+low.pval = names(as_tibble(proteome_final))[t_test_id$row]
+
+proteome_final2 = as_tibble(proteome_final) 
+proteome_final3 = proteome_final2[,c(low.pval)] %>% mutate_all(as.numeric) 
 ```
 
 
-Obtain final data
+**Obtain final data**
+
 ```{r}
 #merge proteome and clinical data 
-bcp_data = cbind(proteome_final, node = bcp_merge$node_coded) %>% as_tibble() %>% drop_na(node) %>% mutate_at(vars(-node), as.numeric) 
+bcp_data = cbind(proteome_final3, node = bcp_merge$node_coded) %>% as_tibble() %>% drop_na(node) %>% mutate_at(vars(-node), as.numeric) 
 ```
 
-Exploratory data analysis
+# Exploratory data analysis
 
 ```{r}
 #grouped boxplots
@@ -126,7 +138,7 @@ bcp_data %>% dplyr::select(c(1:20, 501)) %>%
         axis.text.x = element_text(angle = 40, hjust = 1))
 
 #mid 30 proteins with highest variance
-bcp_data %>% dplyr::select(c(91:110, 501)) %>% 
+bcp_data %>% dplyr::select(c(241:270, 501)) %>% 
   pivot_longer(1:30,
                names_to = "protein",
                values_to = "value") %>% 
@@ -138,7 +150,7 @@ bcp_data %>% dplyr::select(c(91:110, 501)) %>%
         axis.text.x = element_text(angle = 40, hjust = 1))
 
 #40 proteins with lowest variance
-bcp_data %>% dplyr::select(c(161:200, 501)) %>% 
+bcp_data %>% dplyr::select(c(461:500, 501)) %>% 
   pivot_longer(1:40,
                names_to = "protein",
                values_to = "value") %>% 
@@ -151,13 +163,13 @@ bcp_data %>% dplyr::select(c(161:200, 501)) %>%
 ```
 
 
-## Prediction
+# Prediction
 
 ```{r}
 #create training set with a random sample of 800 observations
-set.seed(2020)
+set.seed(13)
 rowTrain <-createDataPartition(y = bcp_data$node,
-                               p = 0.75,
+                               p = 0.85,
                                list = FALSE)
 bcp_train = bcp_data[rowTrain,]
 bcp_test = bcp_data[-rowTrain,]
@@ -171,11 +183,11 @@ ctrl_cl = trainControl(method = "repeatedcv",
                     summaryFunction = twoClassSummary,
                     classProbs = TRUE)
 
-rf.grid = expand.grid(mtry = 15:70, 
+rf.grid = expand.grid(mtry = 5:30, 
                       splitrule = "gini",
-                      min.node.size = 1:5)
+                      min.node.size = 1:6)
 
-set.seed(2020)
+set.seed(13)
 rf.fit <- train(node~., bcp_train,
                 method = "ranger",
                 tuneGrid = rf.grid,
@@ -186,55 +198,69 @@ rf.fit <- train(node~., bcp_train,
 ggplot(rf.fit, highlight = TRUE)
 ```
 
-Random Forest prediction results
+Random Forest prediction results 
+
+**Train error rate**
 
 ```{r}
-rf.pred = predict(rf.fit, bcp_test, type = "prob")
-rf.pred
+rf.pred.train = predict(rf.fit, bcp_train, type = "prob")
+rf.pred.res.train = ifelse(rf.pred.train$Negative > 0.5,'Negative','Positive')
+table(rf.pred.res.train, bcp_train$node)
 ```
 
+Error rate = (`r table(rf.pred.res.train, bcp_train$node)[2]` + `r table(rf.pred.res.train, bcp_train$node)[3]`)/68 = `r (table(rf.pred.res.train, bcp_train$node)[2] + table(rf.pred.res.train, bcp_train$node)[3])/68`
 
-### Boosting 
+**Test error rate**
 
 ```{r}
-
+rf.pred.test = predict(rf.fit, bcp_test, type = "prob")
+rf.pred.res.test = ifelse(rf.pred.test$Negative > 0.5,'Negative','Positive')
+table(rf.pred.res.test, bcp_test$node)
 ```
 
+Error rate = (`r table(rf.pred.res.test, bcp_test$node)[2]` + `r table(rf.pred.res.test, bcp_test$node)[3]`)/12 = `r (table(rf.pred.res.test, bcp_test$node)[2] + table(rf.pred.res.test, bcp_test$node)[3])/12`
 
-### SVM
+## Support vector classifier/machine
 
-**Fit a support vector classifier (linear kernel) to the training data with Tumor Type as the response**
+### Fit a support vector classifier (linear kernel) to the training data with Tumor Type as the response
 
 ```{r}
-ctrl <-trainControl(method = "repeatedcv", number = 5, repeats = 5)
+ctrl <-trainControl(method = "repeatedcv")
 
-set.seed(2020)
+set.seed(13)
 svml.fit <-train(node~.,data = bcp_train,
                  method = "svmLinear2",
-                 allowParallel=TRUE,
-                 tuneGrid =data.frame(cost =exp(seq(-10,2,len=30))),
+                 allowParallel = TRUE,
+                 tuneGrid =data.frame(cost =exp(seq(-13,-1,len=20))),
                  trControl = ctrl)
 
 ggplot(svml.fit, highlight = TRUE)
 ```
 
-Find the training and test error rate
+**Find the training and test error rate**
+
+Training error rate
+
+```{r}
+pred.svml.train <-predict(svml.fit, newdata = bcp_train)
+caret::confusionMatrix(data = pred.svml.train, reference = bcp_train$node)
+```
+
+Test error rate 
 
 ```{r}
 pred.svml.test <-predict(svml.fit, newdata = bcp_test)
-summary(pred.svml.test)
-table(pred.svml.test, bcp_test$node)
-confusionMatrix(data = summary(pred.svml.test), reference = bcp_test$node)
+caret::confusionMatrix(data = pred.svml.test, reference = bcp_test$node)
 ```
 
-**Fit a support vector machine (radial kernel) to the training data with Tumor Type as the response**
+### Fit a support vector machine (radial kernel) to the training data with Tumor Type as the response
 
 ```{r}
-svmr.grid <-expand.grid(C =exp(seq(-5,2,len=10)),
-                        sigma =exp(seq(-7,1,len=10)))
+svmr.grid <-expand.grid(C =exp(seq(-10,1,len=20)),
+                        sigma =exp(seq(-9,1.5,len=20)))
 
-set.seed(7)
-svmr.fit <-train(tumor~.,data = bcp_train,
+set.seed(13)
+svmr.fit <-train(node~.,data = bcp_train,
                  method = "svmRadial",
                  allowParallel=TRUE,
                  tuneGrid = svmr.grid,
@@ -243,10 +269,18 @@ svmr.fit <-train(tumor~.,data = bcp_train,
 ggplot(svmr.fit, highlight = TRUE)
 ```
 
-Find the training and test error rate
+**Find the training and test error rate**
+
+Training error rate
+
+```{r}
+pred.svmr.train <-predict(svmr.fit, newdata = bcp_train)
+caret::confusionMatrix(data = pred.svmr.train, reference = bcp_train$node)
+```
+
+Test error rate
 
 ```{r}
 pred.svmr.test <-predict(svmr.fit, newdata = bcp_test)
-table(pred.svmr.test, bcp_test$tumor)
+caret::confusionMatrix(data = pred.svmr.test, reference = bcp_test$node)
 ```
-
