@@ -8,6 +8,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(randomForest)
 library(gbm)
+library(rpart)
+library(rpart.plot)
 ```
 
 ```{r}
@@ -17,6 +19,34 @@ rowTrain <-createDataPartition(y = bcp_data$node,
                                list = FALSE)
 bcp_train = bcp_data[rowTrain,]
 bcp_test = bcp_data[-rowTrain,]
+```
+
+## Classification Trees
+
+```{r}
+set.seed(1)
+tree1 <- rpart(formula = diabetes~., data = dat,
+               subset = rowTrain, 
+               control = rpart.control(cp = 0))
+
+cpTable <- printcp(tree1)
+plotcp(tree1)
+minErr <- which.min(cpTable[,4])
+
+# minimum cross-validation error
+tree2 <- prune(tree1, cp = cpTable[minErr,1])
+rpart.plot(tree2)
+
+set.seed(13)
+tree1 <- rpart(formula = node ~., data = bcp_train,
+               control = rpart.control(cp = 0))
+
+cpTable <- printcp(tree1)
+plotcp(tree1)
+minErr <- which.min(cpTable[,4])
+
+tree2 <- prune(tree1, cp = cpTable[minErr,1])
+rpart.plot(tree2)
 ```
 
 ## Random Forest
@@ -78,6 +108,29 @@ Based off the Test Error matrices, the square root random forest has a better pr
 ```{r}
 
 ```
+
+
+### AdaBoosting
+```{r}
+adaboosting_grid <- expand.grid(n.trees = c(2000,3000,4000),
+                        interaction.depth = 1:4,
+                        shrinkage = c(0.001, 0.005, 0.01),
+                        n.minobsinnode = 1)
+set.seed(13)
+# Adaboost loss function
+adaboosting_fit <- train(node ~., bcp_train, 
+                 tuneGrid = adaboosting_grid,
+                 trControl = control,
+                 method = "gbm",
+                 distribution = "adaboost",
+                 metric = "ROC",
+                 verbose = FALSE)
+
+ggplot(adaboosting_fit, highlight = TRUE)
+
+gbmA.pred <- predict(gbmA.fit, newdata = dat[-rowTrain,], type = "prob")
+```
+
 
 ### Distribution = bernoulli for binary classifcation
 ```{r}
