@@ -22,6 +22,8 @@ library(janitor)
 library(ModelMetrics)
 library(caret)
 library(microbenchmark)
+library(RColorBrewer)
+library(factoextra)
 library(broom)
 
 knitr::opts_chunk$set(
@@ -123,8 +125,61 @@ bcp_data = cbind(proteome_final3, node = bcp_merge$node_coded) %>% as_tibble() %
 
 # Exploratory data analysis
 
+## Some unsupervised learning
+
+**k-means**
+Use function fviz_nbclust to determine the optimal number of clusters using average sillhouette.
+
 ```{r}
-#grouped boxplots
+bcp_eda = bcp_data %>% select(-node)
+bcp_eda1 = scale(bcp_eda)
+fviz_nbclust(bcp_eda1, 
+             FUNcluster = kmeans,
+             method = "silhouette")
+```
+
+
+```{r}
+#make clusters
+set.seed(13)
+
+km = kmeans(bcp_eda1, centers = 7, nstart = 30)
+
+fviz_cluster(list(data = bcp_eda1, cluster = km$cluster),
+                      ellipse.type = "convex",
+                      geom = c("point","text"),
+                      labelsize = 5,
+                      palette  = "Dark2") + 
+  labs(title = "Clusters based on k-means results") + theme_bw()
+```
+
+
+```{r}
+ind4.complete <-cutree(hc.complete, 4)
+
+# Who are in the fourth cluster?
+bcp_eda1[ind4.complete==4,]
+```
+
+To display more details, we show the heatmap of the data.
+```{r}
+library(corrplot)
+library(gplots)
+#display.brewer.all(n=NULL, type="all", select=NULL, exact.n=TRUE)
+col1 <-colorRampPalette(brewer.pal(9, "GnBu"))(100)
+col2 <-colorRampPalette(brewer.pal(3, "Spectral"))(2)
+
+heatmap.2(bcp_eda1,col = col1, 
+          keysize=.8, key.par =list(cex=.5),
+          trace = "none", key = TRUE, 
+          #cexCol = 0.75, labCol =as.character(bcp_eda1[,1]),
+          #ColSideColors = col2[as.numeric(dat[,"Legendary"])+1],
+          margins =c(10, 10))
+```
+
+**Grouped boxplots**
+
+```{r}
 #top 20 genes with highest variance
 bcp_data %>% dplyr::select(c(1:20, 501)) %>% 
   pivot_longer(1:20,
@@ -183,7 +238,7 @@ ctrl_cl = trainControl(method = "repeatedcv",
                     summaryFunction = twoClassSummary,
                     classProbs = TRUE)
 
-rf.grid = expand.grid(mtry = 5:35, 
+rf.grid = expand.grid(mtry = 2:30, 
                       splitrule = "gini",
                       min.node.size = 1:6)
 
@@ -192,10 +247,43 @@ rf.fit <- train(node~., bcp_train,
                 method = "ranger",
                 tuneGrid = rf.grid,
                 metric = "ROC",
-                trControl = ctrl_cl, 
-                verbose = FALSE)
+                importance = "permutation", 
+                trControl = ctrl_cl)
 
 ggplot(rf.fit, highlight = TRUE)
+```
+
+Variable importance
+
+```{r}
+varimp = varImp(rf.fit)$importance
+
+varimp$protein = rownames(varimp) 
+varimp = as_tibble(varimp) %>% arrange(desc(Overall)) %>% slice(1:80)
+```
+
+**Hierarchical clustering**
+
+Prepare data for hierarchical clustering 
+
+```{r}
+bcp_hclust = bcp_eda1[,c(varimp$protein)]
+
+#specify clustering types
+hc.complete <-hclust(dist(bcp_hclust), method = "complete")
+hc.average <-hclust(dist(bcp_hclust), method = "average")
+hc.single <-hclust(dist(bcp_hclust), method = "single")
+```
+
+
+```{r}
+hc.complete$labels = as.vector(varimp$protein)
+fviz_dend(hc.complete, 
+          k = 4, cex = 0.5, palette = "jco",
+          color_labels_by_k = TRUE,
+          rect = TRUE, rect_fill = TRUE, 
+          rect_border = "jco",
+          labels_track_height = 2.5, horiz = TRUE)
 ```
 
 Random Forest prediction results 
@@ -231,6 +319,7 @@ set.seed(13)
 svml.fit <-train(node~.,data = bcp_train,
                  method = "svmLinear2",
                  allowParallel = TRUE,
+                 preProc = c("scale", "center"),
                  tuneGrid =data.frame(cost =exp(seq(-13,-1,len=20))),
                  trControl = ctrl)
 
