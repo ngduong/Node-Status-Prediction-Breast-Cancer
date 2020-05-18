@@ -5,6 +5,121 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(randomForest)
+library(gbm)
 ```
 
+```{r}
+set.seed(13)
+rowTrain <-createDataPartition(y = bcp_data$node,
+                               p = 0.80,
+                               list = FALSE)
+bcp_train = bcp_data[rowTrain,]
+bcp_test = bcp_data[-rowTrain,]
+```
+
+## Random Forest
+
+```{r}
+control <- trainControl(method = "repeatedcv",
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
+
+### Using Square Root Range
+
+rf_grid <- expand.grid(mtry = 1:30,
+                       splitrule = "gini",
+                       min.node.size = 1:5)
+
+set.seed(13)
+rf_fit <- train(node ~., bcp_train,
+                method = "ranger",
+                tuneGrid = rf_grid,
+                metric = "ROC",
+                trControl = control)
+
+ggplot(rf_fit, highlight = TRUE)
+
+### Using Exact Square Root 
+
+rf_grid_sqrt <- expand.grid(mtry = sqrt(ncol(bcp_data)),
+                       splitrule = "gini",
+                       min.node.size = 1:5)
+
+set.seed(13)
+rf_fit_sqrt <- train(node ~., bcp_train,
+                method = "ranger",
+                tuneGrid = rf_grid_sqrt,
+                metric = "ROC",
+                trControl = control)
+
+ggplot(rf_fit_sqrt, highlight = TRUE)
+```
+
+## Random Forest Test Prediction & Error 
+
+```{r}
+### 1:30 Range
+rf_pred <- predict(rf_fit, newdata = bcp_test, type = "prob")
+rf_pred_test_error <- ifelse(rf_pred$Negative > 0.5, "Negative", "Positive")
+table(rf_pred_test_error, bcp_test$node)
+
+### Square Root 
+rf_pred_sqrt <- predict(rf_fit_sqrt, newdata = bcp_test, type = "prob")
+rf_pred_sqrt_test_error <- ifelse(rf_pred_sqrt$Negative > 0.5, "Negative", "Positive")
+table(rf_pred_sqrt_test_error, bcp_test$node)
+```
+
+Based off the Test Error matrices, the square root random forest has a better prediction rate. 
+
+## Boosting 
+
+```{r}
+
+```
+
+### Distribution = bernoulli for binary classifcation
+```{r}
+gbmB.grid <- expand.grid(n.trees = c(2000,3000,4000),
+                        interaction.depth = 1:6,
+                        shrinkage = c(0.001,0.003,0.005),
+                        n.minobsinnode = 1)
+set.seed(1)
+# Binomial loss function
+gbmB.fit <- train(diabetes~., dat, 
+                 subset = rowTrain, 
+                 tuneGrid = gbmB.grid,
+                 trControl = ctrl,
+                 method = "gbm",
+                 distribution = "bernoulli",
+                 metric = "ROC",
+                 verbose = FALSE)
+
+ggplot(gbmB.fit, highlight = TRUE)
+
+gbmB.pred <- predict(gbmB.fit, newdata = dat[-rowTrain,], type = "prob")[,1]
+```
+
+### Dr. Sun's AdaBoosting code
+```{r}
+gbmA.grid <- expand.grid(n.trees = c(2000,3000,4000),
+                        interaction.depth = 1:6,
+                        shrinkage = c(0.001,0.003,0.005),
+                        n.minobsinnode = 1)
+set.seed(1)
+# Adaboost loss function
+gbmA.fit <- train(diabetes~., dat, 
+                 subset = rowTrain, 
+                 tuneGrid = gbmA.grid,
+                 trControl = ctrl,
+                 method = "gbm",
+                 distribution = "adaboost",
+                 metric = "ROC",
+                 verbose = FALSE)
+
+ggplot(gbmA.fit, highlight = TRUE)
+
+gbmA.pred <- predict(gbmA.fit, newdata = dat[-rowTrain,], type = "prob")[,1]
+```
 
