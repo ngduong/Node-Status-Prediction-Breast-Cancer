@@ -2,7 +2,7 @@ stl2137\_trees
 ================
 
 ``` r
-load("./updated_bcp_data.RData")
+load("./final_data.RData")
 
 set.seed(13)
 rowTrain <-createDataPartition(y = bcp_data$node,
@@ -27,17 +27,17 @@ cpTable <- printcp(tree1)
     ## rpart(formula = node ~ ., data = bcp_train, control = rpart.control(cp = 0))
     ## 
     ## Variables actually used in tree construction:
-    ## [1] NP_000590 NP_001132 NP_001815
+    ## [1] NP_000476 NP_055410 NP_060595
     ## 
     ## Root node error: 32/64 = 0.5
     ## 
     ## n= 64 
     ## 
     ##        CP nsplit rel error xerror    xstd
-    ## 1 0.46875      0   1.00000 1.2812 0.11995
-    ## 2 0.12500      1   0.53125 1.1250 0.12402
-    ## 3 0.09375      2   0.40625 1.2500 0.12103
-    ## 4 0.00000      3   0.31250 1.1562 0.12346
+    ## 1 0.43750      0   1.00000 1.2812 0.11995
+    ## 2 0.21875      1   0.56250 1.3750 0.11588
+    ## 3 0.03125      2   0.34375 1.1562 0.12346
+    ## 4 0.00000      3   0.31250 1.0625 0.12476
 
 ``` r
 plotcp(tree1)
@@ -111,8 +111,8 @@ table(rf_pred_test_error, bcp_test$node)
 
     ##                   
     ## rf_pred_test_error Negative Positive
-    ##           Negative        5        5
-    ##           Positive        3        3
+    ##           Negative        7        4
+    ##           Positive        1        4
 
 ``` r
 ### Square Root 
@@ -123,15 +123,15 @@ table(rf_pred_sqrt_test_error, bcp_test$node)
 
     ##                        
     ## rf_pred_sqrt_test_error Negative Positive
-    ##                Negative        6        6
-    ##                Positive        2        2
+    ##                Negative        8        5
+    ##                Positive        0        3
 
 ## Boosting
 
 ### Distribution = Bernoulli
 
 ``` r
-bern_boosting_grid <- expand.grid(n.trees = c(2000,3000),
+bern_boosting_grid <- expand.grid(n.trees = c(1000, 2000,3000),
                         interaction.depth = 1:4,
                         shrinkage = c(0.001, 0.003, 0.005, 0.01),
                         n.minobsinnode = 1)
@@ -159,13 +159,13 @@ table(bern_boosting_test_error, bcp_test$node)
 
     ##                         
     ## bern_boosting_test_error Negative Positive
-    ##                 Negative        6        5
-    ##                 Positive        2        3
+    ##                 Negative        8        5
+    ##                 Positive        0        3
 
 ### AdaBoosting
 
 ``` r
-adaboosting_grid <- expand.grid(n.trees = c(2000,3000),
+adaboosting_grid <- expand.grid(n.trees = c(1000, 2000,3000),
                         interaction.depth = 1:4,
                         shrinkage = c(0.001, 0.003, 0.005, 0.01),
                         n.minobsinnode = 1)
@@ -192,14 +192,52 @@ table(adaboosting_test_error, bcp_test$node)
 
     ##                       
     ## adaboosting_test_error Negative Positive
-    ##               Negative        5        7
-    ##               Positive        3        1
+    ##               Negative        8        5
+    ##               Positive        0        3
 
 # Test Data Performance
 
 ``` r
-#roc_rf <- roc(bcp_test$node, rf_fit)
-#roc_rf_sqrt <- roc(bcp_test$node, rf_fit_sqrt)
-#roc_bern_boost <- 
-#roc_adaboost <- 
+roc_rf <- roc(bcp_test$node, rf_pred[,1])
 ```
+
+    ## Setting levels: control = Negative, case = Positive
+
+    ## Setting direction: controls > cases
+
+``` r
+roc_rf_sqrt <- roc(bcp_test$node, rf_pred_sqrt[,1])
+```
+
+    ## Setting levels: control = Negative, case = Positive
+    ## Setting direction: controls > cases
+
+``` r
+roc_bern_boost <- roc(bcp_test$node, bern_boosting_pred[,1])
+```
+
+    ## Setting levels: control = Negative, case = Positive
+    ## Setting direction: controls > cases
+
+``` r
+roc_adaboost <- roc(bcp_test$node, adaboosting_pred[,1])
+```
+
+    ## Setting levels: control = Negative, case = Positive
+    ## Setting direction: controls > cases
+
+``` r
+plot(roc_rf)
+plot(roc_rf_sqrt, add = TRUE, col = 2)
+plot(roc_bern_boost, add = TRUE, col = 3)
+plot(roc_adaboost, add = TRUE, col = 4)
+
+auc <- c(roc_rf$auc[1], roc_rf_sqrt$auc[1], roc_bern_boost$auc[1], roc_adaboost$auc[1])
+
+
+modelNames <- c("random forest","random forest sqrt","bernoulli boost","adaboost")
+legend("bottomright", legend = paste0(modelNames, ": ", round(auc,3)),
+       col = 1:6, lwd = 2)
+```
+
+![](stl2137_trees_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
