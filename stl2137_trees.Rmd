@@ -18,7 +18,7 @@ library(gbm)
 
 
 ```{r}
-load("./updated_bcp_data.RData")
+load("./final_data.RData")
 
 set.seed(13)
 rowTrain <-createDataPartition(y = bcp_data$node,
@@ -53,7 +53,6 @@ control <- trainControl(method = "repeatedcv",
 
 ### Using Square Root Range
 ```{r}
-
 rf_grid <- expand.grid(mtry = 1:30,
                        splitrule = "gini",
                        min.node.size = 1:5)
@@ -103,7 +102,7 @@ table(rf_pred_sqrt_test_error, bcp_test$node)
 
 ### Distribution = Bernoulli 
 ```{r}
-bern_boosting_grid <- expand.grid(n.trees = c(2000,3000),
+bern_boosting_grid <- expand.grid(n.trees = c(1000, 2000,3000),
                         interaction.depth = 1:4,
                         shrinkage = c(0.001, 0.003, 0.005, 0.01),
                         n.minobsinnode = 1)
@@ -127,7 +126,7 @@ table(bern_boosting_test_error, bcp_test$node)
 
 ### AdaBoosting
 ```{r}
-adaboosting_grid <- expand.grid(n.trees = c(2000,3000),
+adaboosting_grid <- expand.grid(n.trees = c(1000, 2000,3000),
                         interaction.depth = 1:4,
                         shrinkage = c(0.001, 0.003, 0.005, 0.01),
                         n.minobsinnode = 1)
@@ -151,11 +150,21 @@ table(adaboosting_test_error, bcp_test$node)
 # Test Data Performance
 
 ```{r}
-#roc_rf <- roc(bcp_test$node, rf_fit)
-#roc_rf_sqrt <- roc(bcp_test$node, rf_fit_sqrt)
-#roc_bern_boost <- 
-#roc_adaboost <- 
+roc_rf <- roc(bcp_test$node, rf_pred[,1])
+roc_rf_sqrt <- roc(bcp_test$node, rf_pred_sqrt[,1])
+roc_bern_boost <- roc(bcp_test$node, bern_boosting_pred[,1])
+roc_adaboost <- roc(bcp_test$node, adaboosting_pred[,1])
   
+plot(roc_rf)
+plot(roc_rf_sqrt, add = TRUE, col = 2)
+plot(roc_bern_boost, add = TRUE, col = 3)
+plot(roc_adaboost, add = TRUE, col = 4)
 
+auc <- c(roc_rf$auc[1], roc_rf_sqrt$auc[1], roc_bern_boost$auc[1], roc_adaboost$auc[1])
+
+
+modelNames <- c("random forest","random forest sqrt","bernoulli boost","adaboost")
+legend("bottomright", legend = paste0(modelNames, ": ", round(auc,3)),
+       col = 1:6, lwd = 2)
 ```
 
