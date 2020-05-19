@@ -1,23 +1,7 @@
----
-title: "stl2137_trees"
-output: github_document
----
+stl2137\_trees
+================
 
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-library(caret)
-library(tidyverse)
-library(randomForest)
-library(gbm)
-library(rpart)
-library(rpart.plot)
-library(pROC)
-library(ranger)
-library(gbm)
-```
-
-
-```{r}
+``` r
 load("./updated_bcp_data.RData")
 
 set.seed(13)
@@ -30,30 +14,57 @@ bcp_test = bcp_data[-rowTrain,]
 
 ## Classification Trees
 
-```{r}
+``` r
 set.seed(13)
 tree1 <- rpart(formula = node ~., data = bcp_train,
                control = rpart.control(cp = 0))
 
 cpTable <- printcp(tree1)
+```
+
+    ## 
+    ## Classification tree:
+    ## rpart(formula = node ~ ., data = bcp_train, control = rpart.control(cp = 0))
+    ## 
+    ## Variables actually used in tree construction:
+    ## [1] NP_000590 NP_001132 NP_001815
+    ## 
+    ## Root node error: 32/64 = 0.5
+    ## 
+    ## n= 64 
+    ## 
+    ##        CP nsplit rel error xerror    xstd
+    ## 1 0.46875      0   1.00000 1.2812 0.11995
+    ## 2 0.12500      1   0.53125 1.1250 0.12402
+    ## 3 0.09375      2   0.40625 1.2500 0.12103
+    ## 4 0.00000      3   0.31250 1.1562 0.12346
+
+``` r
 plotcp(tree1)
+```
+
+![](stl2137_trees_files/figure-gfm/unnamed-chunk-2-1.png)<!-- -->
+
+``` r
 minErr <- which.min(cpTable[,4])
 
 tree2 <- prune(tree1, cp = cpTable[minErr,1])
 rpart.plot(tree2)
 ```
 
+![](stl2137_trees_files/figure-gfm/unnamed-chunk-2-2.png)<!-- -->
+
 ## Random Forest
 
-```{r}
+``` r
 control <- trainControl(method = "repeatedcv",
                      summaryFunction = twoClassSummary,
                      classProbs = TRUE)
 ```
 
 ### Using Square Root Range
-```{r}
 
+``` r
 rf_grid <- expand.grid(mtry = 1:30,
                        splitrule = "gini",
                        min.node.size = 1:5)
@@ -68,9 +79,11 @@ rf_fit <- train(node ~., bcp_train,
 ggplot(rf_fit, highlight = TRUE)
 ```
 
-### Using Exact Square Root 
+![](stl2137_trees_files/figure-gfm/unnamed-chunk-4-1.png)<!-- -->
 
-```{r}
+### Using Exact Square Root
+
+``` r
 rf_grid_sqrt <- expand.grid(mtry = sqrt(ncol(bcp_data)),
                        splitrule = "gini",
                        min.node.size = 1:5)
@@ -85,24 +98,39 @@ rf_fit_sqrt <- train(node ~., bcp_train,
 ggplot(rf_fit_sqrt, highlight = TRUE)
 ```
 
-## Random Forest Test Prediction & Error 
+![](stl2137_trees_files/figure-gfm/unnamed-chunk-5-1.png)<!-- -->
 
-```{r}
+## Random Forest Test Prediction & Error
+
+``` r
 ### 1:30 Range
 rf_pred <- predict(rf_fit, newdata = bcp_test, type = "prob")
 rf_pred_test_error <- ifelse(rf_pred$Negative > 0.5, "Negative", "Positive")
 table(rf_pred_test_error, bcp_test$node)
+```
 
+    ##                   
+    ## rf_pred_test_error Negative Positive
+    ##           Negative        5        5
+    ##           Positive        3        3
+
+``` r
 ### Square Root 
 rf_pred_sqrt <- predict(rf_fit_sqrt, newdata = bcp_test, type = "prob")
 rf_pred_sqrt_test_error <- ifelse(rf_pred_sqrt$Negative > 0.5, "Negative", "Positive")
 table(rf_pred_sqrt_test_error, bcp_test$node)
 ```
 
-## Boosting 
+    ##                        
+    ## rf_pred_sqrt_test_error Negative Positive
+    ##                Negative        6        6
+    ##                Positive        2        2
 
-### Distribution = Bernoulli 
-```{r}
+## Boosting
+
+### Distribution = Bernoulli
+
+``` r
 bern_boosting_grid <- expand.grid(n.trees = c(2000,3000),
                         interaction.depth = 1:4,
                         shrinkage = c(0.001, 0.003, 0.005, 0.01),
@@ -119,14 +147,24 @@ bern_boosting_fit <- train(node~., bcp_train,
                  verbose = FALSE)
 
 ggplot(bern_boosting_fit, highlight = TRUE)
+```
 
+![](stl2137_trees_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
+
+``` r
 bern_boosting_pred <- predict(bern_boosting_fit, newdata = bcp_test, type = "prob")
 bern_boosting_test_error <- ifelse(bern_boosting_pred$Negative > 0.5, "Negative", "Positive")
 table(bern_boosting_test_error, bcp_test$node)
 ```
 
+    ##                         
+    ## bern_boosting_test_error Negative Positive
+    ##                 Negative        6        5
+    ##                 Positive        2        3
+
 ### AdaBoosting
-```{r}
+
+``` r
 adaboosting_grid <- expand.grid(n.trees = c(2000,3000),
                         interaction.depth = 1:4,
                         shrinkage = c(0.001, 0.003, 0.005, 0.01),
@@ -142,20 +180,26 @@ adaboosting_fit <- train(node ~., bcp_train,
                  verbose = FALSE)
 
 ggplot(adaboosting_fit, highlight = TRUE)
+```
 
+![](stl2137_trees_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
+
+``` r
 adaboosting_pred <- predict(adaboosting_fit, newdata = bcp_test, type = "prob")
 adaboosting_test_error <- ifelse(adaboosting_pred$Negative > 0.5, "Negative", "Positive")
 table(adaboosting_test_error, bcp_test$node)
 ```
 
+    ##                       
+    ## adaboosting_test_error Negative Positive
+    ##               Negative        5        7
+    ##               Positive        3        1
+
 # Test Data Performance
 
-```{r}
+``` r
 #roc_rf <- roc(bcp_test$node, rf_fit)
 #roc_rf_sqrt <- roc(bcp_test$node, rf_fit_sqrt)
 #roc_bern_boost <- 
 #roc_adaboost <- 
-  
-
 ```
-
