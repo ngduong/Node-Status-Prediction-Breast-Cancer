@@ -44,4 +44,444 @@ scale_fill_discrete = scale_fill_viridis_d
 theme_set(theme_minimal() + theme(legend.position = "bottom"))
 ```
 
+# Importing and Wrangling of Data
 
+```{r}
+outcome = read.csv("./breastcancerproteomes/clinical_data_breast_cancer.csv") %>% janitor::clean_names()
+proteome = read.csv("./breastcancerproteomes/77_cancer_proteomes_CPTAC_itraq.csv") 
+
+#clean proteome data
+#transpose dataset
+proteome_tp <- transpose(proteome)
+
+#get row and colnames in order
+colnames(proteome_tp) <- proteome$RefSeq_accession_number
+proteome_tp$par_id <- colnames(proteome) 
+
+#rearrange data
+proteome_with_id = as_tibble(proteome_tp) %>% select(par_id, everything()) %>% .[-c(1:3),] %>% separate(par_id, c("id2","id4","tcga")) %>% select(-tcga)
+
+proteome_wo_id = as_tibble(proteome_tp) %>% select(-par_id, everything()) %>% .[-c(1:3),-ncol(proteome_tp)]
+  
+#clean outcome data 
+outcome_clean = outcome %>% 
+  separate(complete_tcga_id, c("tcga","id2","id4"), "-") %>% #sep id based on 2-digit id and 4-digit id
+  select(-tcga) %>% 
+  select(id2, id4, node_coded)
+
+bcp_merge = left_join(proteome_with_id, outcome_clean, by = c("id2","id4")) %>% select(-id2, -id4) %>% drop_na(node_coded)
+```
+ 
+### Leave out proteins that have missing quantification values
+
+```{r}
+missing.counts <- NULL
+for(i in 1:ncol(proteome_wo_id)) {
+missing.counts[i] <- sum(is.na(proteome_wo_id[,i]))}
+
+miss <- names(proteome_wo_id)[which(missing.counts >= 1)] 
+
+proteome_woid_nona = proteome_wo_id[-c(81:83),!(colnames(proteome_wo_id) %in% c(miss))]
+```
+
+### Screening variables 
+
+```{r}
+#find variance for all proteins
+var <- NULL
+for(i in 1:ncol(proteome_woid_nona)){
+var[i] <- var(proteome_woid_nona[,i])}
+
+var_id = tibble(row = c(1:7994), var) %>% arrange(desc(var)) %>% slice(1:5000)
+
+#find names of proteins with high variances and put them in a vector
+sup.var = names(proteome_woid_nona)[var_id$row]
+
+#subset original data with the created vector
+proteome_final = proteome_woid_nona[,c(sup.var)] %>% mutate_all(as.numeric) %>% as.matrix()
+
+#use t-test to find proteins that are most associatd with the outcome
+t_test = NULL
+for(i in 1:ncol(proteome_final)){
+  t_test[i] = t.test(proteome_final[,i]~bcp_merge$node_coded)$p.value
+}
+
+t_test_id = tibble(row = c(1:5000), t_test) %>% arrange(t_test) %>% slice(1:500)
+
+low.pval = names(as_tibble(proteome_final))[t_test_id$row]
+
+proteome_final2 = as_tibble(proteome_final) 
+proteome_final3 = proteome_final2[,c(low.pval)] %>% mutate_all(as.numeric) 
+```
+
+## Obtain final data
+
+```{r}
+#merge proteome and clinical data 
+bcp_data = cbind(proteome_final3, node = bcp_merge$node_coded) %>% as_tibble() %>% drop_na(node) %>% mutate_at(vars(-node), as.numeric) 
+```
+
+# Exploratory data analysis
+
+## Some unsupervised learning
+
+```{r}
+#get design matrix and scale for hclust
+bcp_eda = bcp_data %>% select(-node)
+bcp_eda1 = scale(bcp_eda)
+```
+
+## Heatmap based on hierarchical clustering**
+
+```{r}
+col1 = colorRampPalette(brewer.pal(9, "GnBu"))(80)
+col2 = colorRampPalette(brewer.pal(3, "Spectral"))(2)
+
+heatmap.2(t(bcp_eda1), col = col1, keysize = 0.7, key.par = list(cex = 0.5),
+          trace = "none", key = TRUE, cexCol = 0.75,
+          labcol = as.character(c(1:80)),
+          ColSideColors = col2[as.numeric(bcp_data$node)],
+          margins = c(10,10))
+```
+
+### k-means
+Use function fviz_nbclust to determine the optimal number of clusters using average sillhouette.
+
+```{r}
+fviz_nbclust(bcp_eda1, 
+             FUNcluster = kmeans,
+             method = "silhouette")
+```
+
+```{r}
+#make clusters
+set.seed(13)
+km = kmeans(bcp_eda1, centers = 7, nstart = 30)
+
+fviz_cluster(list(data = bcp_eda1, cluster = km$cluster),
+                      ellipse.type = "convex",
+                      geom = c("point","text"),
+                      labelsize = 10,
+                      palette  = "Dark2") + 
+  labs(title = "K-means clustering for chosen k = 7") + theme_bw()
+```
+
+## Grouped boxplots
+
+```{r}
+#top 50 proteins with highest variance
+bcp_data %>% dplyr::select(c(1:50, 501)) %>% 
+  pivot_longer(1:30,
+               names_to = "protein",
+               values_to = "value") %>% 
+  group_by(node) %>% 
+  ggplot(aes(x = protein, y = value, color = node)) +
+  geom_boxplot() + theme_bw() + 
+  labs(y = "Expression levels", x = "Protein") + 
+  theme(legend.position = "none",
+        axis.text.x = element_text(angle = 40, hjust = 1))
+```
+
+# Train and Test Datasets for Prediction
+
+```{r}
+#create training set with a random sample of 800 observations
+set.seed(13)
+rowTrain <-createDataPartition(y = bcp_data$node,
+                               p = 0.80,
+                               list = FALSE)
+bcp_train = bcp_data[rowTrain,]
+bcp_test = bcp_data[-rowTrain,]
+```
+
+# Insert Adeline Stuff Here 
+
+# Random Forest
+
+```{r}
+control <- trainControl(method = "repeatedcv",
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
+```
+
+## Using Square Root Range
+```{r}
+rf_grid <- expand.grid(mtry = 1:30,
+                       splitrule = "gini",
+                       min.node.size = 1:5)
+
+set.seed(13)
+rf_fit <- train(node ~., bcp_train,
+                method = "ranger",
+                tuneGrid = rf_grid,
+                metric = "ROC",
+                trControl = control)
+
+ggplot(rf_fit, highlight = TRUE)
+```
+
+## Random Forest Train & Test Prediction & Error 
+
+```{r}
+### Train
+rf_train_pred <- predict(rf_fit, newdata = bcp_train, type = "prob")
+rf_pred_train_error <- ifelse(rf_train_pred$Negative > 0.5, "Negative", "Positive")
+table(rf_pred_train_error, bcp_train$node)
+
+### Test 
+rf_pred <- predict(rf_fit, newdata = bcp_test, type = "prob")
+rf_pred_test_error <- ifelse(rf_pred$Negative > 0.5, "Negative", "Positive")
+table(rf_pred_test_error, bcp_test$node)
+```
+
+### Variable Importance
+
+```{r}
+varimp = varImp(rf_fit)$importance
+varimp$protein = rownames(varimp)
+varimp = as_tibble(varimp) %>% arrange(desc(Overall)) %>% slice(1:75)
+```
+
+# Boosting 
+
+## Binomial Loss Function  
+```{r}
+bern_boosting_grid <- expand.grid(n.trees = c(1000, 2000,3000),
+                        interaction.depth = 1:4,
+                        shrinkage = c(0.001, 0.003, 0.005, 0.01),
+                        n.minobsinnode = 1)
+
+set.seed(13)
+
+bern_boosting_fit <- train(node~., bcp_train, 
+                 tuneGrid = bern_boosting_grid,
+                 trControl = control,
+                 method = "gbm",
+                 distribution = "bernoulli",
+                 metric = "ROC",
+                 verbose = FALSE)
+
+ggplot(bern_boosting_fit, highlight = TRUE)
+
+bern_boosting_pred <- predict(bern_boosting_fit, newdata = bcp_test, type = "prob")
+bern_boosting_test_error <- ifelse(bern_boosting_pred$Negative > 0.5, "Negative", "Positive")
+table(bern_boosting_test_error, bcp_test$node)
+```
+
+## AdaBoosting
+
+```{r}
+adaboosting_grid <- expand.grid(n.trees = c(1000, 2000,3000),
+                        interaction.depth = 1:4,
+                        shrinkage = c(0.001, 0.003, 0.005, 0.01),
+                        n.minobsinnode = 1)
+set.seed(13)
+# Adaboost loss function
+adaboosting_fit <- train(node ~., bcp_train, 
+                 tuneGrid = adaboosting_grid,
+                 trControl = control,
+                 method = "gbm",
+                 distribution = "adaboost",
+                 metric = "ROC",
+                 verbose = FALSE)
+
+ggplot(adaboosting_fit, highlight = TRUE)
+
+adaboosting_pred <- predict(adaboosting_fit, newdata = bcp_test, type = "prob")
+adaboosting_test_error <- ifelse(adaboosting_pred$Negative > 0.5, "Negative", "Positive")
+table(adaboosting_test_error, bcp_test$node)
+```
+
+# Comparing the 3 Tree-Based Methods
+
+```{r}
+resamp <- resamples(list(random_forest = rf_fit,
+                         bernoulli_boosting = bern_boosting_fit,
+                         adaboosting = adaboosting_fit))
+
+summary(resamp)
+```
+
+# Hierarchical clustering
+
+```{r}
+#Prepare data for hierarchical clustering 
+bcp_hclust = bcp_eda1[,c(varimp$protein)]
+
+#specify clustering types
+hc.complete <-hclust(dist(t(bcp_hclust)), method = "complete")
+hc.average <-hclust(dist(t(bcp_hclust)), method = "average")
+hc.single <-hclust(dist(t(bcp_hclust)), method = "single")
+```
+
+```{r}
+#give names to proteins 
+hc.complete$labels = as.vector(varimp$protein)
+
+fviz_dend(hc.complete, 
+          k = 9, cex = 0.5, palette = "jco",
+          color_labels_by_k = TRUE,
+          rect = TRUE, rect_fill = TRUE, 
+          rect_border = "jco",
+          labels_track_height = 2.5, horiz = TRUE)
+```
+
+# Support vector classifier/machine
+
+## Fit a support vector classifier (linear kernel) to the training data with Tumor Type as the response
+
+```{r}
+ctrl <-trainControl(method = "repeatedcv", 
+                    summaryFunction = twoClassSummary,
+                    classProbs = TRUE)
+
+set.seed(13)
+svml.fit <-train(node~.,data = bcp_train,
+                 method = "svmLinear2",
+                 allowParallel = TRUE,
+                 metric = "ROC",
+                 preProc = c("scale", "center"),
+                 tuneGrid =data.frame(cost =exp(seq(-8,-3,len=10))),
+                 trControl = ctrl)
+
+ggplot(svml.fit, highlight = TRUE)
+```
+
+### Training error rate
+
+```{r}
+pred.svml.train <-predict(svml.fit, newdata = bcp_train)
+caret::confusionMatrix(data = pred.svml.train, reference = bcp_train$node)
+```
+
+### Test error rate 
+
+```{r}
+pred.svml.test <-predict(svml.fit, newdata = bcp_test)
+caret::confusionMatrix(data = pred.svml.test, reference = bcp_test$node)
+```
+
+## Fit a support vector machine (radial kernel) to the training data with Tumor Type as the response
+
+```{r}
+svmr.grid <-expand.grid(C =exp(seq(-10,0,len=10)),
+                        sigma =exp(seq(-8,1,len=10)))
+
+set.seed(13)
+svmr.fit <-train(node~.,data = bcp_train,
+                 method = "svmRadial",
+                 allowParallel=TRUE,
+                 preProc = c("scale", "center"),
+                 tuneGrid = svmr.grid,
+                 trControl = ctrl)
+
+ggplot(svmr.fit, highlight = TRUE)
+```
+
+### Training error rate
+
+```{r}
+pred.svmr.train <-predict(svmr.fit, newdata = bcp_train)
+caret::confusionMatrix(data = pred.svmr.train, reference = bcp_train$node)
+```
+
+### Test error rate
+
+```{r}
+pred.svmr.test <-predict(svmr.fit, newdata = bcp_test)
+caret::confusionMatrix(data = pred.svmr.test, reference = bcp_test$node)
+```
+
+# Visualizations of black-box models
+
+## PDP curves
+
+```{r warning = FALSE, message = FALSE}
+pdp.p1 = rf.fit %>% 
+  partial(pred.var = "NP_003106",
+          grid.resolution = 100,
+          prob = TRUE) %>% 
+  autoplot(rug = TRUE, train = bcp_train, ylab = "Predicted probability") + 
+  ggtitle("Random Forest")
+
+pdp.p2 = rf.fit %>% 
+  partial(pred.var = "NP_808818",
+          grid.resolution = 100,
+          prob = TRUE) %>% 
+  autoplot(rug = TRUE, train = bcp_train, ylab = "")
+
+pdp.p3 = rf.fit %>% 
+  partial(pred.var = "NP_653190",
+          grid.resolution = 100,
+          prob = TRUE) %>% 
+  autoplot(rug = TRUE, train = bcp_train, ylab = "Predicted probability")
+
+pdp.p4 = rf.fit %>% 
+  partial(pred.var = "NP_061119",
+          grid.resolution = 100,
+          prob = TRUE) %>% 
+  autoplot(rug = TRUE, train = bcp_train, ylab = "")
+
+grid.arrange(pdp.p1, pdp.p2, pdp.p3, pdp.p4, ncol = 2, nrow = 2)
+```
+
+## ICE curves
+
+```{r wanring = FALSE, message = FALSE}
+ice.rf.p1 = rf.fit %>% 
+  partial(pred.var = "NP_003106",
+          grid.resolution = 20,
+          ice = TRUE) %>% 
+  autoplot(alpha = 0.5, train = bcp_train, center = TRUE, ylab = "Predicted probability") + 
+  ggtitle("Random Forest, centered") 
+
+ice.rf.p2 = rf.fit %>% 
+  partial(pred.var = "NP_808818",
+          grid.resolution = 100,
+          ice = TRUE) %>% 
+  autoplot(alpha = 0.5, train = bcp_train, center = TRUE, ylab = "") 
+
+ice.rf.p3 = rf.fit %>% 
+  partial(pred.var = "NP_653190",
+          grid.resolution = 100,
+          ice = TRUE) %>% 
+  autoplot(alpha = 0.5, train = bcp_train, center = TRUE, ylab = "Predicted probability")
+
+ice.rf.p4 = rf.fit %>% 
+  partial(pred.var = "NP_061119",
+          grid.resolution = 100,
+          ice = TRUE) %>% 
+  autoplot(alpha = 0.5, train = bcp_train, center = TRUE, ylab = "")
+
+grid.arrange(ice.rf.p1, ice.rf.p2, ice.rf.p3, ice.rf.p4, ncol = 2, nrow = 2)
+```
+
+# Visualization of explanations for each case and label combination in an explanation
+
+```{r}
+explainer.rf = lime(bcp_train, rf.fit)
+explanation.rf = explain(bcp_test[c(1,3,4,7),], explainer.rf, 
+                         n_features = 7, labels = "Positive")
+plot_features(explanation.rf)
+```
+
+# Test Data Performance
+
+```{r}
+roc_rf <- roc(bcp_test$node, rf_pred[,1])
+roc_bern_boost <- roc(bcp_test$node, bern_boosting_pred[,1])
+roc_adaboost <- roc(bcp_test$node, adaboosting_pred[,1])
+roc_svml <- roc(bcp_test$node, pred.svml.test[,1])
+  
+plot(roc_rf)
+plot(roc_bern_boost, add = TRUE, col = 3)
+plot(roc_adaboost, add = TRUE, col = 4)
+plot(roc_svml, add = TRUE, col = 5)
+
+auc <- c(roc_rf$auc[1], roc_bern_boost$auc[1], roc_adaboost$auc[1], roc_svml$auc[1])
+
+
+modelNames <- c("random forest", "bernoulli boost","adaboost", "SVM Linear Kernel")
+legend("bottomright", legend = paste0(modelNames, ": ", round(auc,3)),
+       col = 1:6, lwd = 2)
+```
