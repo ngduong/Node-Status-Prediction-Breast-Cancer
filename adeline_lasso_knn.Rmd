@@ -19,51 +19,61 @@ load("./updated_bcp_data.RData")
 
 set.seed(13)
 training_rows = createDataPartition(y = bcp_data$node,
-                                    p = 0.75,
+                                    p = 0.8,
                                     list = FALSE)
 
-training_data = bcp_data[training_rows,]
-test_data = bcp_data[-training_rows,]
+bcp_train = bcp_data[training_rows,]
+bcp_test = bcp_data[-training_rows,]
 ```
 
 # Model Specifications
 ```{r}
-ctrl = trainControl(method = "repeatedcv", repeats = 5, number = 10)
+ctrl = trainControl(method = "repeatedcv", repeats = 5, number = 10,
+                    summaryFunction = twoClassSummary,
+                    classProbs = TRUE)
 ```
 
 # Lasso
 ```{r}
-y = training_data$node
-x = model.matrix(node ~ ., data = training_data)[, -1]
+y = bcp_train$node
+x = model.matrix(node ~ ., data = bcp_train)[, -1]
 
 set.seed(13)
 lasso_fit = train(x, y,
                   method = "glmnet",
+                  family = "binomial",
                   trControl = ctrl,
+                  metric = "ROC",
                   preProcess = c("center", "scale"),
                   tuneGrid = expand.grid(alpha = 1, 
                                          lambda = exp(seq(-10, 0, length = 100))))
 
 plot(lasso_fit, xTrans = function(x) log(x))
 
+lasso_pred = predict(lasso_fit, newdata = bcp_test, type = "prob")[,2]
+lasso_roc = roc(bcp_test$node, lasso_pred)
+plot(lasso_roc)
+legend("bottomright", legend = paste0("Lasso AUC", ": ", round(lasso_roc$auc, 3)),
+       col = 1:4, lwd = 2)
+
 lasso_coef = coef(lasso_fit$finalModel,lasso_fit$bestTune$lambda)
 
-lasso_pred = predict(lasso_fit, newdata = test_data)
-mse(test_data$node, lasso_pred)
+lasso_pred = predict(lasso_fit, newdata = bcp_test)
+mse(bcp_test$node, lasso_pred)
 
 # Confusion Matrix
-test_pred_prob = predict(lasso_fit, newdata = test_data,
+test_pred_prob = predict(lasso_fit, newdata = bcp_test,
                          type = "prob")
 test_pred = rep("Negative", length(test_pred_prob$Negative))
 test_pred[test_pred_prob$Negative < 0.5] = "Positive"
 
 caret::confusionMatrix(data = as.factor(test_pred),
-                       reference = test_data$node,
+                       reference = bcp_test$node,
                        positive = "Positive")
 ```
 
 # KNN
-```{r}
+```{r warning = FALSE, message = FALSE}
 set.seed(13)
 knn_fit = train(x, y,
                 method = "knn",
@@ -71,10 +81,10 @@ knn_fit = train(x, y,
                 tuneGrid = data.frame(k = seq(1, 60, by = 1)),
                 trControl = ctrl)
 
-ggplot(knn_fit)
+ggplot(knn_fit, highlight = TRUE)
 
-knn_pred = predict(knn_fit, newdata = test_data, type = "prob")[,2]
-knn_roc = roc(test_data$node, knn_pred)
+knn_pred = predict(knn_fit, newdata = bcp_test, type = "prob")[,2]
+knn_roc = roc(bcp_test$node, knn_pred)
 plot(knn_roc)
 legend("bottomright", legend = paste0("KNN AUC", ": ", round(knn_roc$auc, 3)),
        col = 1:4, lwd = 2)
@@ -83,7 +93,7 @@ knn_pred_prob = rep("Positive", length(knn_pred))
 knn_pred_prob[knn_pred < 0.5] = "Negative"
 
 caret::confusionMatrix(data = as.factor(knn_pred_prob),
-                       reference = test_data$node,
+                       reference = bcp_test$node,
                        positive = "Positive")
 ```
 
