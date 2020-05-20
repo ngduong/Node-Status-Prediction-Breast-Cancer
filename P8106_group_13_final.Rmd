@@ -194,6 +194,13 @@ bcp_train = bcp_data[rowTrain,]
 bcp_test = bcp_data[-rowTrain,]
 ```
 
+# Model Specifications
+```{r}
+ctrl = trainControl(method = "repeatedcv", repeats = 5, number = 10,
+                    summaryFunction = twoClassSummary,
+                    classProbs = TRUE)
+```
+
 # Lasso
 ```{r}
 y = bcp_train$node
@@ -257,7 +264,6 @@ caret::confusionMatrix(data = as.factor(knn_pred_prob),
                        reference = bcp_test$node,
                        positive = "Positive")
 ```
-
 
 # Random Forest
 
