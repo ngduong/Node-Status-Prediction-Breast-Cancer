@@ -53,7 +53,7 @@ control <- trainControl(method = "repeatedcv",
 
 ### Using Square Root Range
 ```{r}
-rf_grid <- expand.grid(mtry = 1:30,
+rf_grid <- expand.grid(mtry = 1:22,
                        splitrule = "gini",
                        min.node.size = 1:5)
 
@@ -67,24 +67,20 @@ rf_fit <- train(node ~., bcp_train,
 ggplot(rf_fit, highlight = TRUE)
 ```
 
-### Using Exact Square Root 
+## Random Forest Test Prediction & Error 
 
 ```{r}
-rf_grid_sqrt <- expand.grid(mtry = sqrt(ncol(bcp_data)),
-                       splitrule = "gini",
-                       min.node.size = 1:5)
+### Train
+rf_train_pred <- predict(rf_fit, newdata = bcp_train, type = "prob")
+rf_pred_train_error <- ifelse(rf_train_pred$Negative > 0.5, "Negative", "Positive")
+table(rf_pred_train_error, bcp_train$node)
 
-set.seed(13)
-rf_fit_sqrt <- train(node ~., bcp_train,
-                method = "ranger",
-                tuneGrid = rf_grid_sqrt,
-                metric = "ROC",
-                trControl = control)
-
-ggplot(rf_fit_sqrt, highlight = TRUE)
+### Test 
+rf_pred <- predict(rf_fit, newdata = bcp_test, type = "prob")
+rf_pred_test_error <- ifelse(rf_pred$Negative > 0.5, "Negative", "Positive")
+table(rf_pred_test_error, bcp_test$node)
 ```
 
-## Random Forest Test Prediction & Error 
 
 ```{r}
 ### 1:30 Range
@@ -146,6 +142,18 @@ adaboosting_pred <- predict(adaboosting_fit, newdata = bcp_test, type = "prob")
 adaboosting_test_error <- ifelse(adaboosting_pred$Negative > 0.5, "Negative", "Positive")
 table(adaboosting_test_error, bcp_test$node)
 ```
+
+# Resampling
+
+```{r}
+resamp <- resamples(list(random_forest = rf_fit,
+                         random_forest_sqrt = rf_fit_sqrt,
+                         bernoulli_boosting = bern_boosting_fit,
+                         adaboosting = adaboosting_fit))
+
+summary(resamp)
+```
+
 
 # Test Data Performance
 
