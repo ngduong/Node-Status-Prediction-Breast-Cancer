@@ -113,7 +113,7 @@ Although we decided to go with the random forest model due to interpretation pur
 ## Plots 
 
 ```{r fig.cap="Heatmap of data", out.width = '110%', echo = FALSE}
-knitr::include_graphics("heatmap.png")
+knitr::include_graphics("heatmap.Rplot.png")
 ```
 
 ```{r fig.cap="K-means clustering of 80 subjects when k = 7", out.width = '100%', echo = FALSE}

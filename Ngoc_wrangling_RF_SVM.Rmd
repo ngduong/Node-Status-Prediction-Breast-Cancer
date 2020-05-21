@@ -185,17 +185,26 @@ fviz_cluster(list(data = bcp_eda1, cluster = km$cluster),
 **Grouped boxplots**
 
 ```{r}
-#top 50 proteins with highest variance
-bcp_data %>% dplyr::select(c(1:50, 501)) %>% 
-  pivot_longer(1:30,
+#divide obs into clusters based on k-means results
+bcp_kmeans = bcp_data %>% mutate(id = c(1:80),
+                                 cluster = ifelse(id %in% c(1,66,10,6,56,30,62,2,68,45,33), "cluster 4", ifelse(id %in% c(71, 49, 25, 46, 13, 47, 3, 74), "cluster 7", ifelse(id %in% c(41, 26, 19, 78, 42, 12, 37, 51, 59, 2, 20, 28, 27, 21, 20), "cluster 6", ifelse(id %in% c(52, 53,54, 55, 31, 27, 40, 14, 34, 17, 35, 42), "cluster 3", "other clusters"))))) %>% dplyr::select(c(1:25, 501), cluster)
+
+#scale 
+bcp_kmeans[, c(1:25)] <- scale(bcp_kmeans[, c(1:25)])
+
+#grouped boxplot for top 25 proteins with highest variance
+bcp_kmeans %>% 
+  filter(cluster %in% c("cluster 3", "cluster 4", "cluster 6", "cluster 7")) %>% 
+  pivot_longer(1:25,
                names_to = "protein",
                values_to = "value") %>% 
-  group_by(node) %>% 
+  group_by(node, cluster) %>% 
   ggplot(aes(x = protein, y = value, color = node)) +
   geom_boxplot() + theme_bw() + 
   labs(y = "Expression levels", x = "Protein") + 
-  theme(legend.position = "none",
-        axis.text.x = element_text(angle = 40, hjust = 1))
+  theme(legend.position = "right",
+        axis.text.x = element_text(angle = 30, hjust = 1)) + 
+  facet_grid(cluster~.)
 ```
 
 
