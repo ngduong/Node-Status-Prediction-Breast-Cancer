@@ -68,6 +68,28 @@ Although SVC and RF have very similar performance (both on CV ROC and test accur
 
 After selecting the final model, we are interested in learning more about the most influential proteins in this model. We used function **varImp** to identify 75 most impactful proteins (using the selected Random Forest model) and used hierarchical clustering to get some information about the physiological functions and group memberships of these proteins. In the dendrogram (**Figure 5**), we decided to go with 9 clusters in order to get more similarities between proteins within the clusters. Ideally, in the absence of time and effort constraint, we would have tried increasing the number of clusters, thereby reducing height, to obtain better-defined protein groups.
 
+Using an open databased by the NCBI/NIH, under Proteins, we were able to identify some functional similarities between the proteins in the same cluster. Some proteins identified have previously been linked to cell growth and risk of cancer in general, and breast cancer or metastasis. However, some other proteins have just been documented as having links to other diseases or performing cell functions, whose relationship to cancer is unclear. 
+
+Tentatively, we grouped the shared function of the cluster as follows:
+
+* Cluster 1: proteins related to muscle diseases
+
+* Cluster 2 and 3: proteins related to muscle diseases
+
+* Cluster 4: proteins related to cancer cell promotion and blood glucose levels 
+
+* Cluster 5: proteins related to DNA damage response and stress response
+
+* Cluster 6: proteins related to breast cancer risk 
+
+* Cluster 7 and 8: proteins performing cell growth, proliferation, and signnaling 
+
+* Cluster 9: proteins performing mitochondrial functions
+
+Therefore, the result from our model and dendogram visualization might serve more as an exploratory step towards the uncovering of many other proteins' functionality in breast cancer development. Due to a rather small sample size, lack of knowledge on the sampling method, and some other limitations later to be discussed, we are not confident that this result is generalizable to a larger population.
+
+## Understanding a smaller subset of important variables/proteins 
+
 First, we want to explore the marginal impact of some particular proteins on the predicted probability of lymph-node involvement across all observations. We extracted the 4 most important proteins (NP_003106, NP_808818, NP_653190, NP_061119), and created Partial Dependence Plots (PDPs).
 
 ### PDP
@@ -88,11 +110,13 @@ LIME assumes linearity on a local scale (around any particular observation) for 
 
 ## Limitations
 
-The small sample size (n = 80) and high number of predictors (p = 500) produced some challenges for some models (such as regularized logistic regression or kNN). PCA could have been used for dimension-reduction pre-model training; however, the goal of interpreting our results on a protein-specific level diverted us from doing so. 
+There are several limitations that we would like to address in this paper.
 
-GBM and ADAboost likely would have performed better provided more computational power and time put in tuning the hyperparameters.
+First, the small sample size (n = 80) and high number of predictors (p = 500) produced some challenges for some models (such as regularized logistic regression or kNN). PCA could have been used for dimension-reduction pre-model training; however, the goal of interpreting our results on a protein-specific level diverted us from doing so. 
 
-Leaving out proteins that had missing values instead of imputing might have caused more bias in the prediction results. However, for this particular problem, choosing among different imputation methods is another question to investigate. This is a caveat in this project that leaves much room to improve.
+Second, GBM and ADAboost likely would have performed better provided more computational power and time put in tuning the hyperparameters.
+
+Finally, leaving out proteins that had missing values instead of imputing might have caused more bias in the prediction results. However, for this particular problem, choosing among different imputation methods is another question to investigate. This is a caveat in this project that leaves much room to improve.
 
 # Conclusion
 
@@ -117,11 +141,11 @@ knitr::include_graphics("heatmap.Rplot.png")
 ```
 
 ```{r fig.cap="K-means clustering of 80 subjects when k = 7", out.width = '100%', echo = FALSE}
-knitr::include_graphics("k-means.Rplot.png")
+knitr::include_graphics("k-means.png")
 ```
 
 ```{r fig.cap="Grouped boxplots of protein expressions for first 25 proteins stratified by cluster", out.width = '110%', echo = FALSE}
-knitr::include_graphics("kmeans-boxplots.Rplot.png")
+knitr::include_graphics("kmeans-boxplots.png")
 ```
 
 \pagebreak
@@ -133,7 +157,7 @@ knitr::include_graphics("final_model_comparison_ROC.png")
 ```
 
 ```{r fig.cap="Dendorgram from hierarchical clustering of 75 most important proteins from Random Forest model", out.width = '100%', echo = FALSE}
-knitr::include_graphics("Rplot01.png")
+knitr::include_graphics("dendogram.png")
 ```
 
 ```{r fig.cap="Partial Depdendence Plots of first 4 most important proteins from Random Forest model", out.width = '100%', echo = FALSE}
@@ -196,7 +220,7 @@ NP_001229372: growth factor receptor-bound protein 7 isoform a, promotion of bre
 
 NP_064695: aldo-keto reductase family 1 member B10, promotes cancer cells/tumors (lung, breast)
 
-**Cluster 5: Stress DNA response**
+**Cluster 5: DNA damage response and stress response**
 
 NP_005582: double-strand break repair protein MRE11 isoform 1, DNA damage response markers
 
@@ -204,7 +228,7 @@ NP_937886: ankyrin repeat and SOCS box protein 7 isoform 2, stress responsive ge
 
 NP_003106: UDP-N-acetylhexosamine pyrophosphorylase isoform a, overexpressed in prostate cancer and protects cancer cells from endoplasmic reticulum stress, conferring growth advantage
 
-**Cluster 6: Associated with increased Breast Cancer Risk via genetic variants**
+**Cluster 6: associated with increased breast cancer risk via genetic variants**
 
 NP_001073899: TOX high mobility group box family member 3 isoform 1, associated with increased breast cancer risk
 
@@ -257,19 +281,19 @@ knitr::include_graphics("knn.png")
 ```
 
 ```{r fig.cap= "Model tuning plot for Random Forest", out.width = '100%', echo = FALSE}
-knitr::include_graphics("rf_tuning copy.png")
+knitr::include_graphics("rf_tuning.png")
 ```
 
 ```{r fig.cap= "Model tuning plot for GBM", out.width = '100%', echo = FALSE}
-knitr::include_graphics("Bernoulli_boosting_tuning copy.png")
+knitr::include_graphics("Bernoulli_boosting_tuning.png")
 ```
 
 ```{r fig.cap= "Model tuning plot for ADABoost", out.width = '100%', echo = FALSE}
-knitr::include_graphics("AdaBoosting_tuning copy.png")
+knitr::include_graphics("AdaBoosting_tuning.png")
 ```
 
 ```{r fig.cap= "Model tuning plot for SVC", out.width = '100%', echo = FALSE}
-knitr::include_graphics("SVC.Rplot.png")
+knitr::include_graphics("SVC_tuning.png")
 ```
 
 
