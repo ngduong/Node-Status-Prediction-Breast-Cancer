@@ -15,7 +15,7 @@ library(pROC)
 
 # Load Data and Split
 ```{r}
-load("./updated_bcp_data.RData")
+load("./final_data.RData")
 
 set.seed(13)
 training_rows = createDataPartition(y = bcp_data$node,
